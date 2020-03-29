@@ -1,0 +1,235 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Mappings": {
+        "RegionMap": {
+            "ap-south-1": {
+                "AMI": "ami-0620d12a9cf777c87"
+            },
+            "us-east-2": {
+                "AMI": "ami-0fc20dd1da406780b"
+            },
+            "ap-southeast-1": {
+                "AMI": "ami-09a4a9ce71ff3f20b"
+            },
+            "us-east-1": {
+                "AMI": "ami-07ebfd5b3428b6f4d"
+            },
+            "us-west-1": {
+                "AMI": "ami-03ba3948f6c37a4b0"
+            },
+            "us-west-2": {
+                "AMI": "ami-0d1cd67c26f5fca19"
+            }
+        }
+    },
+    "Parameters": {
+        "MyInstaceTypeParamter": {
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": [
+                "t2.micro",
+                "t3.small",
+                "t2.nano",
+                "m4.large"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type",
+            "Description": "Enter the t2.micro,mi.small or mi.large, Default Value is t2.micro."
+        },
+        "VpcCidrBlock": {
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "Description": "VPC Cidr Range (Will be a /16 block )"
+        },
+        "PublicSubenetCidrBlock": {
+            "Type": "String",
+            "Default": "10.0.1.0/24",
+            "Description": "Public Subnet Cidr Range (Will be a /24 block )"
+        },
+        "SSHKeyName": {
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "Description": "Name of existing an ec2 Key pair to enble SSH access to instance",
+            "ConstraintDescription": "Must be the name of existing ec2 Key Pair"
+        }
+    },
+    "Resources": {
+        "MyVpc": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": {
+                    "Ref": "VpcCidrBlock"
+                }
+            }
+        },
+        "PublicSubnet": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "MyVpc"
+                },
+                "CidrBlock": {
+                    "Ref": "PublicSubenetCidrBlock"
+                },
+                "MapPublicIpOnLaunch": "True"
+            }
+        },
+        "IGW": {
+            "Type": "AWS::EC2::InternetGateway",
+            "Properties": {}
+        },
+        "IgwAttachment": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "MyVpc"
+                },
+                "InternetGatewayId": {
+                    "Ref": "IGW"
+                }
+            }
+        },
+        "PublicRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "MyVpc"
+                }
+            }
+        },
+        "PublicRoute": {
+            "Type": "AWS::EC2::Route",
+            "DependsOn": "IGW",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "PublicRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "IGW"
+                }
+            }
+        },
+        "PublicSubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PublicSubnet"
+                },
+                "RouteTableId": {
+                    "Ref": "PublicRouteTable"
+                }
+            }
+        },
+        "InstanceSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Allow HTTP, SSH, HTTPS and RDP traffic to our host",
+                "VpcId": {
+                    "Ref": "MyVpc"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ],
+                "SecurityGroupEgress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "MyEc2Instance": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "RegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMI"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "MyInstaceTypeParamter"
+                },
+                "SubnetId": {
+                    "Ref": "PublicSubnet"
+                },
+                "KeyName": {
+                    "Ref": "SSHKeyName"
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "InstanceSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "EIPAddress": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "InstanceId": {
+                    "Ref": "MyEc2Instance"
+                }
+            }
+        },
+        "EIPAddressAssoc": {
+            "Type": "AWS::EC2::EIPAssociation",
+            "Properties": {
+                "EIP": {
+                    "Ref": "EIPAddress"
+                },
+                "InstanceId": {
+                    "Ref": "MyEc2Instance"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "RegionName": {
+            "Value": {
+                "Ref": "AWS::Region"
+            }
+        },
+        "MyEC2InstancePublicIP": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "MyEc2Instance",
+                    "PublicIp"
+                ]
+            },
+            "Description": "Newly Created Server Ip Address"
+        },
+        "ElasticIp": {
+            "Value": {
+                "Ref": "EIPAddress"
+            },
+            "Description": "Elastic Ip"
+        }
+    }
+}
